@@ -60,6 +60,7 @@ assets/cargo-logo.png     # logo
 ```
 
 - `_mtime` es el timestamp de la última edición local — se usa para resolver conflictos last-write-wins cuando dos dispositivos escriben sobre el mismo día.
+- En la sede Turbaco la columna de pago con tarjeta se llama **Datafono** en toda la UI y en el parser de PDF, pero internamente la clave en el JSON sigue siendo `tarjeta` para mantener la misma forma de datos que la sede de Puerto Colombia.
 
 ## Cómo funciona la sincronización
 

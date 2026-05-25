@@ -221,7 +221,7 @@ const ResumenMes = ({ store }) => {
           <div className="sub" style={{ marginTop: 2 }}>suma de "Efectivo en mano" diario</div>
         </div>
         <div className="box" style={{ padding: 14 }}>
-          <div className="h3" style={{ marginBottom: 4 }}>Tarjeta</div>
+          <div className="h3" style={{ marginBottom: 4 }}>Datafono</div>
           <Money value={totalTarjeta} big/>
           <div className="sub" style={{ marginTop: 2 }}>para conciliar con banco</div>
         </div>
@@ -264,7 +264,7 @@ const ResumenMes = ({ store }) => {
               <th style={{ width: 70 }}>Día</th>
               <th>PDF</th>
               <th style={{ textAlign: 'right' }}>Efectivo</th>
-              <th style={{ textAlign: 'right' }}>Tarjeta</th>
+              <th style={{ textAlign: 'right' }}>Datafono</th>
               <th style={{ textAlign: 'right' }}>Transf.</th>
               <th style={{ textAlign: 'right' }}>Gastos</th>
               <th style={{ textAlign: 'right' }}>Notas</th>
@@ -663,7 +663,7 @@ const ResumenAnual = ({ store }) => {
           <Money value={totals.contado} big/>
         </div>
         <div className="box" style={{ padding: 14 }}>
-          <div className="h3" style={{ marginBottom: 4 }}>Tarjeta</div>
+          <div className="h3" style={{ marginBottom: 4 }}>Datafono</div>
           <Money value={totals.tarjeta} big/>
         </div>
         <div className="box" style={{ padding: 14 }}>
@@ -689,7 +689,7 @@ const ResumenAnual = ({ store }) => {
               <th style={{ width: 60, textAlign: 'right' }}>Días</th>
               <th style={{ textAlign: 'right' }}>Contado</th>
               <th style={{ width: 110 }}/>
-              <th style={{ textAlign: 'right' }}>Tarjeta</th>
+              <th style={{ textAlign: 'right' }}>Datafono</th>
               <th style={{ textAlign: 'right' }}>Transf.</th>
               <th style={{ textAlign: 'right' }}>Salidas</th>
               <th style={{ textAlign: 'right' }}>Extras Mes</th>

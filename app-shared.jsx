@@ -220,7 +220,7 @@ const DENOMS = [
   { key: 'b2k',   valor:   2000, label: '$2.000'   },
 ];
 
-const METHOD_LABEL = { efectivo: 'Efectivo', tarjeta: 'Tarjeta', transferencia: 'Transferencia' };
+const METHOD_LABEL = { efectivo: 'Efectivo', tarjeta: 'Datafono', transferencia: 'Transferencia' };
 const METHODS = ['efectivo', 'tarjeta', 'transferencia'];
 
 const GASTO_CATS = [
