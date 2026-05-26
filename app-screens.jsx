@@ -182,7 +182,7 @@ const ResumenMes = ({ store }) => {
 
   let totalEfectivo = 0, totalTarjeta = 0, totalTransf = 0;
   let totalGastos = 0, totalNotas = 0, totalContado = 0, totalDescuadre = 0;
-  let totalPropina = 0;
+  let totalPropina = 0, totalCristaleria = 0;
 
   for (const d of days) {
     const c = computeDay(d);
@@ -191,6 +191,7 @@ const ResumenMes = ({ store }) => {
     totalTransf   += c.porMetodo.transferencia.total;
     totalGastos   += c.gastosTotal;
     totalNotas    += c.notasTotal;
+    totalCristaleria += c.cristaleriaTotal || 0;
     if (c.hasInput) {
       totalContado += c.contado;
       totalDescuadre += c.descuadre || 0;
@@ -221,7 +222,7 @@ const ResumenMes = ({ store }) => {
           <div className="sub" style={{ marginTop: 2 }}>suma de "Efectivo en mano" diario</div>
         </div>
         <div className="box" style={{ padding: 14 }}>
-          <div className="h3" style={{ marginBottom: 4 }}>Datafono</div>
+          <div className="h3" style={{ marginBottom: 4 }}>{METHOD_LABEL.tarjeta}</div>
           <Money value={totalTarjeta} big/>
           <div className="sub" style={{ marginTop: 2 }}>para conciliar con banco</div>
         </div>
@@ -264,7 +265,7 @@ const ResumenMes = ({ store }) => {
               <th style={{ width: 70 }}>Día</th>
               <th>PDF</th>
               <th style={{ textAlign: 'right' }}>Efectivo</th>
-              <th style={{ textAlign: 'right' }}>Datafono</th>
+              <th style={{ textAlign: 'right' }}>{METHOD_LABEL.tarjeta}</th>
               <th style={{ textAlign: 'right' }}>Transf.</th>
               <th style={{ textAlign: 'right' }}>Gastos</th>
               <th style={{ textAlign: 'right' }}>Notas</th>
@@ -331,7 +332,12 @@ const ResumenMes = ({ store }) => {
 
       {totalPropina > 0 && (
         <div style={{ marginTop: 12, fontSize: 11.5, color: W.inkMute, fontStyle: 'italic' }}>
-          Propinas del mes (informativo): {fmtMoney(totalPropina)}
+          Propinas del mes: {fmtMoney(totalPropina)} · Cristalería pagada: {fmtMoney(totalCristaleria)}
+          {totalCristaleria > totalPropina && (
+            <span style={{ marginLeft: 8, color: W.warn }}>
+              (+{fmtMoney(totalCristaleria - totalPropina)} por redondeo)
+            </span>
+          )}
         </div>
       )}
     </div>
@@ -663,7 +669,7 @@ const ResumenAnual = ({ store }) => {
           <Money value={totals.contado} big/>
         </div>
         <div className="box" style={{ padding: 14 }}>
-          <div className="h3" style={{ marginBottom: 4 }}>Datafono</div>
+          <div className="h3" style={{ marginBottom: 4 }}>{METHOD_LABEL.tarjeta}</div>
           <Money value={totals.tarjeta} big/>
         </div>
         <div className="box" style={{ padding: 14 }}>
@@ -689,7 +695,7 @@ const ResumenAnual = ({ store }) => {
               <th style={{ width: 60, textAlign: 'right' }}>Días</th>
               <th style={{ textAlign: 'right' }}>Contado</th>
               <th style={{ width: 110 }}/>
-              <th style={{ textAlign: 'right' }}>Datafono</th>
+              <th style={{ textAlign: 'right' }}>{METHOD_LABEL.tarjeta}</th>
               <th style={{ textAlign: 'right' }}>Transf.</th>
               <th style={{ textAlign: 'right' }}>Salidas</th>
               <th style={{ textAlign: 'right' }}>Extras Mes</th>

@@ -6,26 +6,28 @@ const STORAGE_UI = 'cargo-cuadre-turbaco-ui-v1';
 const SEED_DATA = {
   schemaVersion: 1,
   days: {
-    '2026-05-12': {
-      date: '2026-05-12',
-      comprobante: '131',
-      responsable: 'Cargo Beer Burger Pto Colombia',
+    '2026-05-05': {
+      date: '2026-05-05',
+      comprobante: '',
+      responsable: 'Cargo Turbaco',
       pdfFiles: [{
         id: 'pdf_seed_1',
-        name: 'Cierre 5-12.pdf',
-        comprobante: '131',
-        responsable: 'Cargo Beer Burger Pto Colombia',
+        name: 'Loggro Restobar Turbaco · 5 mayo.pdf',
+        comprobante: '',
+        responsable: 'Cargo Turbaco',
         rawOcrText: '',
+        personalTurno: 4,
         contributed: {
-          ventas: { efectivo: 231000, tarjeta: 292500, transferencia: 336000 },
-          gastos: { nomina: 100000, proveedores: 31000, domicilios: 0, otros: 0 },
-          propinaTotal: 57000,
+          ventas: { efectivo: 280000, tarjeta: 412000, transferencia: 195000 },
+          gastos: { nomina: 80000, proveedores: 45000, domicilios: 0, otros: 0 },
+          propinaTotal: 36000,
         },
       }],
-      ventas: { efectivo: 231000, tarjeta: 292500, transferencia: 336000 },
+      ventas: { efectivo: 280000, tarjeta: 412000, transferencia: 195000 },
       domicilioEfectivo: 0,
-      propinaTotal: 57000,
-      gastos: { nomina: 100000, proveedores: 31000, domicilios: 0, otros: 0 },
+      propinaTotal: 36000,
+      personalTurnoFallback: 0,
+      gastos: { nomina: 80000, proveedores: 45000, domicilios: 0, otros: 0 },
       ajustes: [],
       notas: [],
       contadoDetalle: { monedas: 0, b2k: 0, b5k: 0, b10k: 0, b20k: 0, b50k: 0, b100k: 0 },
@@ -195,6 +197,8 @@ const useStore = () => {
         responsable: parsed.responsable || '',
         rawOcrText: parsed.rawText || '',
         contributed,
+        personalTurno: 0,
+        propinaTurno: contributed.propinaTotal || 0,
       };
       next.pdfFiles = [...(next.pdfFiles || []), entry];
       // Aggregate values onto the day totals
@@ -238,6 +242,25 @@ const useStore = () => {
       }
       if (removed.responsable && next.responsable === removed.responsable) {
         next.responsable = next.pdfFiles[0]?.responsable || '';
+      }
+      next._mtime = Date.now();
+      return { ...d, days: { ...d.days, [date]: next } };
+    });
+  };
+
+  // Update fields on a specific PDF entry (e.g. personalTurno, propinaTurno).
+  // If propinaTurno changes, re-sync day-level propinaTotal so other views match.
+  const updatePdfFile = (date, pdfId, partial) => {
+    setData(d => {
+      const existing = normalizeDay(d.days[date] || emptyDay(date));
+      const next = structuredClone(existing);
+      next.pdfFiles = next.pdfFiles.map(p =>
+        p.id === pdfId ? { ...p, ...partial } : p
+      );
+      if (Object.prototype.hasOwnProperty.call(partial, 'propinaTurno')) {
+        next.propinaTotal = next.pdfFiles.reduce(
+          (sum, p) => sum + (Number(p.propinaTurno) || 0), 0
+        );
       }
       next._mtime = Date.now();
       return { ...d, days: { ...d.days, [date]: next } };
@@ -407,7 +430,7 @@ const useStore = () => {
     data, ui,
     navigate, selectDate, selectMonth,
     getDay, updateDay, updateDayField, deleteDay,
-    addPdfToDay, removePdfFromDay,
+    addPdfToDay, removePdfFromDay, updatePdfFile,
     addAjuste, updateAjuste, removeAjuste,
     addNota, updateNota, removeNota,
     getExtrasMes, addExtraMes, updateExtraMes, removeExtraMes,

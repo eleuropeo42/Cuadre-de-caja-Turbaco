@@ -220,7 +220,7 @@ const DENOMS = [
   { key: 'b2k',   valor:   2000, label: '$2.000'   },
 ];
 
-const METHOD_LABEL = { efectivo: 'Efectivo', tarjeta: 'Datafono', transferencia: 'Transferencia' };
+const METHOD_LABEL = { efectivo: 'Efectivo', tarjeta: 'Datáfono', transferencia: 'Transferencia' };
 const METHODS = ['efectivo', 'tarjeta', 'transferencia'];
 
 const GASTO_CATS = [
@@ -236,12 +236,15 @@ const emptyDay = (date) => ({
   comprobante: '',
   responsable: '',
   // Multiple PDFs allowed (e.g. weekends with 2 shifts).
-  // Each entry: { id, name, comprobante, responsable, rawOcrText, contributed }
+  // Each entry: { id, name, comprobante, responsable, rawOcrText, contributed, personalTurno }
   // `contributed` is a snapshot of what THIS pdf added (so we can subtract on removal).
+  // `personalTurno` = # of people working that shift (drives Cristalería calc).
   pdfFiles: [],
   ventas: { efectivo: 0, tarjeta: 0, transferencia: 0 },
   domicilioEfectivo: 0,
   propinaTotal: 0,
+  // Fallback if a day has propina but no PDF — drives Cristalería at day level
+  personalTurnoFallback: 0,
   gastos: { nomina: 0, proveedores: 0, domicilios: 0, otros: 0 },
   ajustes: [],
   notas: [],
@@ -251,21 +254,30 @@ const emptyDay = (date) => ({
 // Normalize legacy day shape: migrate `pdfFilename` (single) → `pdfFiles` (array).
 const normalizeDay = (d) => {
   if (!d) return d;
-  if (Array.isArray(d.pdfFiles)) return d;
   const out = { ...d };
-  if (out.pdfFilename) {
-    out.pdfFiles = [{
-      id: 'legacy_' + (out.pdfFilename || 'pdf'),
-      name: out.pdfFilename,
-      comprobante: out.comprobante || '',
-      responsable: out.responsable || '',
-      rawOcrText: out.rawOcrText || '',
-      contributed: null, // unknown — can't subtract on removal
-    }];
-  } else {
-    out.pdfFiles = [];
+  if (!Array.isArray(out.pdfFiles)) {
+    if (out.pdfFilename) {
+      out.pdfFiles = [{
+        id: 'legacy_' + (out.pdfFilename || 'pdf'),
+        name: out.pdfFilename,
+        comprobante: out.comprobante || '',
+        responsable: out.responsable || '',
+        rawOcrText: out.rawOcrText || '',
+        contributed: null,
+        personalTurno: 0,
+      }];
+    } else {
+      out.pdfFiles = [];
+    }
+    delete out.pdfFilename;
   }
-  delete out.pdfFilename;
+  // Ensure each PDF entry has personalTurno + propinaTurno (defaults from PDF snapshot)
+  out.pdfFiles = out.pdfFiles.map(p => ({
+    personalTurno: 0,
+    propinaTurno: Number(p.contributed?.propinaTotal) || 0,
+    ...p,
+  }));
+  if (out.personalTurnoFallback === undefined) out.personalTurnoFallback = 0;
   return out;
 };
 
@@ -274,6 +286,77 @@ const computeContado = (detalle) => {
   if (!detalle) return 0;
   return (Number(detalle.monedas) || 0) +
     DENOMS.reduce((sum, d) => sum + (Number(detalle[d.key]) || 0) * d.valor, 0);
+};
+
+// Round UP to nearest 100. ceilTo100(7280) → 7300, ceilTo100(7300) → 7300.
+const ceilTo100 = (n) => Math.ceil((Number(n) || 0) / 100) * 100;
+
+// Cristalería per shift:
+// Treat the cristalería envelope as ONE EXTRA "person" in the split:
+//   - Divisor = personas + 1
+//   - Each employee gets floor(propina / (personas + 1) / 100) × 100  (rounded DOWN to next $100)
+//   - Cristalería absorbs everything that's left over (≥ per-person, never less).
+//   - Total always sums to the propina exactly.
+// Example: $36,000, 6 people → divide by 7 → each gets $5,100, cristalería = $5,400.
+//          $36,000, 4 people → divide by 5 → each gets $7,200, cristalería = $7,200.
+const computeCristaleria = ({ propina, personal }) => {
+  const p = Number(propina) || 0;
+  const n = Number(personal) || 0;
+  if (p <= 0 || n <= 0) return { perPerson: 0, paidOut: 0, cristaleria: 0, propina: p, valid: false };
+  const perPerson = Math.floor((p / (n + 1)) / 100) * 100;
+  const paidOut = perPerson * n;
+  const cristaleria = p - paidOut;
+  return { perPerson, paidOut, cristaleria, propina: p, valid: true };
+};
+
+// Aggregate Cristalería across all shifts in a day.
+// Each PDF carries its own propina (in `contributed.propinaTotal`) and its own
+// `personalTurno`. If there's no PDF but the day has propinaTotal + a fallback
+// personalTurnoFallback, compute from that.
+const computeDayCristaleria = (d) => {
+  if (!d) return { shifts: [], cristaleriaTotal: 0, paidOutTotal: 0, totalPropina: 0, perShiftValid: 0, anyMissing: false };
+  const pdfs = d.pdfFiles || [];
+  const shifts = [];
+  let cristaleriaTotal = 0;
+  let paidOutTotal = 0;
+  let totalPropina = 0;
+  let valid = 0;
+  let anyMissing = false;
+
+  const pushShift = ({ pdfId, pdfName, propina, personal }) => {
+    const c = computeCristaleria({ propina, personal });
+    totalPropina += propina;
+    if (propina > 0 && personal === 0) anyMissing = true;
+    if (c.valid) {
+      cristaleriaTotal += c.cristaleria;
+      paidOutTotal += c.paidOut;
+      valid++;
+    }
+    shifts.push({ pdfId, pdfName, propina, personal, ...c });
+  };
+
+  if (pdfs.length > 0) {
+    for (const pdf of pdfs) {
+      pushShift({
+        pdfId: pdf.id,
+        pdfName: pdf.name,
+        propina: Number(pdf.propinaTurno) || 0,
+        personal: Number(pdf.personalTurno) || 0,
+      });
+    }
+  } else {
+    const propina = Number(d.propinaTotal) || 0;
+    if (propina > 0) {
+      pushShift({
+        pdfId: null,
+        pdfName: 'Entrada manual',
+        propina,
+        personal: Number(d.personalTurnoFallback) || 0,
+      });
+    }
+  }
+
+  return { shifts, cristaleriaTotal, paidOutTotal, totalPropina, perShiftValid: valid, anyMissing };
 };
 
 const computeDay = (d) => {
@@ -292,12 +375,18 @@ const computeDay = (d) => {
   const efectivoAjustado = porMetodo.efectivo.total + (Number(d.domicilioEfectivo) || 0);
   const gastosTotal = Object.values(d.gastos || {}).reduce((a,b)=>a+(Number(b)||0),0);
   const notasTotal  = (d.notas || []).reduce((a,n)=>a+(Number(n.monto)||0),0);
-  const esperado = efectivoAjustado - gastosTotal - notasTotal;
+  const cristaleria = computeDayCristaleria(d);
+  const cristaleriaTotal = cristaleria.cristaleriaTotal; // jar / sobre amount
+  const propinaPagada = cristaleria.totalPropina;
+  const paidOutTotal = cristaleria.paidOutTotal;
+  // Tips leave the cash, but ONLY the cristalería remainder rides back in the
+  // sobre with the rest of the bag. The per-person payout is gone for good.
+  const esperado = efectivoAjustado - gastosTotal - notasTotal - propinaPagada + cristaleriaTotal;
   const contado = computeContado(d.contadoDetalle);
   const hasInput = computeContado(d.contadoDetalle) > 0 || (d.contadoDetalle && Object.values(d.contadoDetalle).some(v => v > 0));
   const descuadre = hasInput ? (contado - esperado) : null;
   const hasPdf = (d.pdfFiles?.length > 0) || !!d.pdfFilename || Object.values(d.ventas||{}).some(v=>v>0);
-  return { porMetodo, efectivoAjustado, gastosTotal, notasTotal, esperado, contado, descuadre, hasPdf, hasInput };
+  return { porMetodo, efectivoAjustado, gastosTotal, notasTotal, cristaleria, cristaleriaTotal, propinaPagada, paidOutTotal, esperado, contado, descuadre, hasPdf, hasInput };
 };
 
 // === Icons ===
@@ -380,7 +469,7 @@ const Sidebar = ({ active, onNavigate, onExport, onImport, syncStatus, onSyncCli
     <nav className="app-nav">
       <div>
         <div className="app-nav-brand">
-          <img src="assets/cargo-logo.png" alt="Cargo Beer Burger & Grill"/>
+          <img src={(typeof window !== 'undefined' && window.__resources && window.__resources.cargoLogo) || "assets/cargo-logo.png"} alt="Cargo Beer Burger & Grill"/>
         </div>
         <div className="app-nav-brand-sub">Cuadre de Caja · Turbaco</div>
       </div>
@@ -418,5 +507,5 @@ Object.assign(window, {
   todayISO, dateLabel, shortDateLabel, yearMonthOf, ymLabel, ymPrev, ymNext, daysInMonth, firstWeekdayOfMonth,
   MONTH_NAMES, DAY_NAMES,
   DENOMS, METHODS, METHOD_LABEL, GASTO_CATS,
-  emptyDay, normalizeDay, computeContado, computeDay,
+  emptyDay, normalizeDay, computeContado, computeDay, computeCristaleria, computeDayCristaleria, ceilTo100,
 });

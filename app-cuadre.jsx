@@ -462,6 +462,12 @@ const ConteoBilletes = ({ date, store, computed }) => {
               <div style={{ fontSize: 10.5, color: W.inkMute, marginTop: 2, lineHeight: 1.5 }}>
                 {fmtMoney(computed.porMetodo.efectivo.total)} efec. ajustado<br/>
                 − {fmtMoney(computed.gastosTotal)} gastos − {fmtMoney(computed.notasTotal)} notas
+                {computed.propinaPagada > 0 && (
+                  <>
+                    <br/>− {fmtMoney(computed.propinaPagada)} propinas
+                    <br/>+ {fmtMoney(computed.cristaleriaTotal)} cristalería (sobre)
+                  </>
+                )}
               </div>
             </div>
             <div>
@@ -527,6 +533,214 @@ const GastosPanel = ({ date, store, computed }) => {
       </div>
       <div style={{ fontSize: 11, color: W.inkMute, marginTop: 8, fontStyle: 'italic' }}>
         Para gastos que no encajan en estas 4 categorías, agrégalos en "Notas / Extras del día" →
+      </div>
+    </div>
+  );
+};
+
+// ===== Cristalería Panel =====
+// Tips are paid out daily, equally split per shift. Each person nominally gets
+// the tip-per-person rounded UP to the nearest 100 — BUT total paid never
+// exceeds tips received: some staff get the next-lower $100 bracket to balance.
+// The envelope ships in the same bag the manager hands off, so the cash leaving
+// the till as tips ($T) returns as the envelope ($T). Net effect on expected
+// cash is exactly zero.
+const CristaleriaPanel = ({ date, store, computed }) => {
+  const day = store.getDay(date);
+  const c = computed.cristaleria;
+
+  return (
+    <div className="box" style={{ padding: 14 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+        <div>
+          <h4 className="h2">Cristalería</h4>
+          <div className="sub" style={{ fontSize: 11.5, marginTop: 2 }}>
+            La cristalería cuenta como una persona más en el reparto. Propina ÷ (personas + 1), redondeado al $100 hacia abajo; el resto queda en el sobre.
+          </div>
+        </div>
+        <span className="tag tag-pdf">{Ico.tip()} Sobre en el bolso</span>
+      </div>
+
+      {c.shifts.length === 0 && (
+        <div style={{
+          marginTop: 10, padding: '12px 14px', background: W.paperAlt,
+          border: `1px dashed ${W.lineSoft}`, borderRadius: 6,
+          fontSize: 12, color: W.inkMute, fontStyle: 'italic', textAlign: 'center',
+        }}>
+          Sin propinas registradas. Cuando subas un PDF de cierre se calcula la cristalería.
+        </div>
+      )}
+
+      {c.shifts.length > 0 && (
+        <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {c.shifts.map((s, i) => (
+            <CristaleriaShiftRow
+              key={s.pdfId || 'manual'}
+              shift={s}
+              index={i}
+              totalShifts={c.shifts.length}
+              onPersonalChange={(n) => {
+                if (s.pdfId) {
+                  store.updatePdfFile(date, s.pdfId, { personalTurno: n });
+                } else {
+                  store.updateDayField(date, ['personalTurnoFallback'], n);
+                }
+              }}
+              onPropinaChange={(v) => {
+                if (s.pdfId) {
+                  store.updatePdfFile(date, s.pdfId, { propinaTurno: v });
+                } else {
+                  store.updateDayField(date, ['propinaTotal'], v);
+                }
+              }}
+            />
+          ))}
+        </div>
+      )}
+
+      {c.shifts.length > 0 && (
+        <div style={{
+          marginTop: 10, padding: '12px 14px',
+          background: W.paperAlt, borderRadius: 6,
+          display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14,
+        }}>
+          <div>
+            <div style={{ fontSize: 10, color: W.inkMute, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+              Propinas recibidas
+            </div>
+            <Money value={c.totalPropina} className="" />
+            <div style={{ fontSize: 10.5, color: W.inkGhost, marginTop: 1 }}>
+              sale del efectivo al cierre
+            </div>
+          </div>
+          <div style={{ paddingLeft: 12, borderLeft: `1px solid ${W.line}` }}>
+            <div style={{ fontSize: 10, color: W.inkMute, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+              Entregado al personal
+            </div>
+            <Money value={c.paidOutTotal} className="" />
+            <div style={{ fontSize: 10.5, color: W.inkGhost, marginTop: 1 }}>
+              suma del pago por persona · sale del bolso
+            </div>
+          </div>
+          <div style={{ paddingLeft: 12, borderLeft: `1px solid ${W.line}` }}>
+            <div style={{ fontSize: 10, color: W.inkMute, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+              Cristalería en el sobre
+            </div>
+            <span className="money" style={{
+              fontSize: 17, fontWeight: 600,
+              color: c.cristaleriaTotal > 0 ? W.highlight : W.inkSoft,
+            }}>
+              {fmtMoney(c.cristaleriaTotal)}
+            </span>
+            <div style={{ fontSize: 10.5, color: W.inkGhost, marginTop: 1 }}>
+              vuelve en el bolso
+            </div>
+          </div>
+        </div>
+      )}
+
+      {c.anyMissing && (
+        <div style={{
+          marginTop: 8, padding: '7px 10px', borderRadius: 6,
+          background: W.warnSoft, border: `1px solid ${W.warnBorder}`,
+          color: W.warn, fontSize: 11.5, display: 'flex', alignItems: 'center', gap: 6,
+        }}>
+          {Ico.warn()} Ingresa el # de personas por turno para calcular la cristalería
+        </div>
+      )}
+    </div>
+  );
+};
+
+const CristaleriaShiftRow = ({ shift, index, totalShifts, onPersonalChange, onPropinaChange }) => {
+  const valid = shift.valid;
+  const missingPeople = shift.propina > 0 && shift.personal === 0;
+  const shiftLabel = totalShifts > 1 ? `Turno ${index + 1}` : 'Turno';
+  return (
+    <div style={{
+      background: W.paperAlt,
+      border: `1px solid ${missingPeople ? W.warnBorder : W.lineSoft}`,
+      borderRadius: 6, padding: '10px 12px',
+      display: 'grid', gridTemplateColumns: '1.2fr 1fr 0.7fr 1.2fr', gap: 14, alignItems: 'center',
+    }}>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 11.5, fontWeight: 600, color: W.ink }}>
+          {shiftLabel}
+        </div>
+        <div style={{
+          fontSize: 10.5, color: W.inkMute, marginTop: 1,
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        }} title={shift.pdfName}>
+          {shift.pdfName}
+        </div>
+      </div>
+
+      {/* Propina del turno (editable) */}
+      <div>
+        <div style={{ fontSize: 10, color: W.inkMute, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>
+          Propina recibida
+        </div>
+        <MoneyInput
+          value={shift.propina}
+          onChange={onPropinaChange}
+          style={{
+            width: '100%', padding: '5px 8px', fontSize: 13,
+            background: shift.propina > 0 ? W.highlightSoft : W.paper,
+            color: shift.propina > 0 ? W.highlight : W.ink,
+            borderColor: shift.propina > 0 ? W.warnBorder : W.line,
+          }}
+          placeholder="$0"
+        />
+      </div>
+
+      {/* Personnel input */}
+      <div style={{ textAlign: 'center' }}>
+        <div style={{ fontSize: 10, color: W.inkMute, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>
+          # Personas
+        </div>
+        <input
+          type="number"
+          min="0"
+          max="30"
+          className="input input-mono"
+          value={shift.personal || ''}
+          onChange={(e) => onPersonalChange(parseInt(e.target.value) || 0)}
+          onFocus={(e) => e.target.select()}
+          placeholder="0"
+          style={{
+            width: '100%', textAlign: 'center', padding: '5px 4px',
+            fontSize: 17, fontWeight: 600, height: 34,
+            borderColor: missingPeople ? W.warn : W.line,
+            background: missingPeople ? W.warnSoft : W.paper,
+          }}
+        />
+      </div>
+
+      {/* Per-shift result: BIG number is the per-person equal share (rounded
+          down to nearest $100). Leftover (= propina − paidOut) is the "cristalería"
+          jar that travels back in the sobre. */}
+      <div style={{ textAlign: 'right' }}>
+        <div style={{ fontSize: 10, color: W.inkMute, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+          Pago por persona
+        </div>
+        {valid ? (
+          <>
+            <Money value={shift.perPerson} big />
+            <div style={{ fontSize: 10.5, color: W.inkMute, marginTop: 1 }}>
+              × {shift.personal} = {fmtMoney(shift.paidOut)}
+            </div>
+            <div style={{
+              fontSize: 10.5, marginTop: 3,
+              color: shift.cristaleria > 0 ? W.highlight : W.inkGhost,
+            }}>
+              + {fmtMoney(shift.cristaleria)} cristalería (sobre)
+            </div>
+          </>
+        ) : (
+          <span style={{ fontSize: 13, color: missingPeople ? W.warn : W.inkGhost, fontStyle: 'italic' }}>
+            {missingPeople ? '↑ ingresa personas' : '—'}
+          </span>
+        )}
       </div>
     </div>
   );
@@ -613,14 +827,26 @@ const CuadreDelDia = ({ store }) => {
       if (!window.parsePdf) throw new Error('Parser no disponible');
       const parsed = await window.parsePdf(file, (p) => setParsing(p));
 
-      // PDF-extracted date overrides target IF different — ask user first
+      // PDF-extracted date overrides target IF different — ask user first.
+      // BUT only when adding the FIRST PDF for that day; otherwise we'd silently
+      // switch the user to a different date when they're trying to add a 2nd turno.
       let useDate = targetDate;
-      if (parsed.date && parsed.date !== targetDate) {
+      const filesAtTarget = (store.getDay(targetDate).pdfFiles || []).length;
+      if (filesAtTarget === 0 && parsed.date && parsed.date !== targetDate) {
         if (confirm(`El PDF dice que es del ${parsed.date}. ¿Guardar el cuadre en esa fecha?`)) {
           store.selectDate(parsed.date);
           useDate = parsed.date;
         }
       }
+
+      // Guard against double-uploads of the SAME file (same filename on the day).
+      // This keeps a stuck or rapid double-click from inserting the same PDF twice.
+      const existingFiles = store.getDay(useDate).pdfFiles || [];
+      if (existingFiles.some(p => p.name === file.name)) {
+        const proceed = confirm(`"${file.name}" ya está cargado para este día. ¿Agregar de todas formas? Cancela si fue por error.`);
+        if (!proceed) return;
+      }
+
       // Add (sum) into the day — pdf becomes a new entry in pdfFiles
       store.addPdfToDay(useDate, file, parsed);
 
@@ -717,6 +943,11 @@ const CuadreDelDia = ({ store }) => {
         <ReclasificacionesPanel date={date} store={store} />
       </div>
 
+      {/* Cristalería (Turbaco: tips paid out daily) */}
+      <div style={{ marginBottom: 14 }}>
+        <CristaleriaPanel date={date} store={store} computed={computed} />
+      </div>
+
       {/* Conteo + Cuadre */}
       <div style={{ marginBottom: 14 }}>
         <ConteoBilletes date={date} store={store} computed={computed} />
@@ -726,16 +957,6 @@ const CuadreDelDia = ({ store }) => {
       <div className="grid" style={{ gridTemplateColumns: '1fr 1fr' }}>
         <GastosPanel date={date} store={store} computed={computed} />
         <NotasPanel date={date} store={store} computed={computed} />
-      </div>
-
-      {/* Propina footnote */}
-      <div style={{ marginTop: 12, fontSize: 11.5, color: W.inkMute, fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span>Propina del día (informativo, no entra al cuadre):</span>
-        <MoneyInput
-          value={day.propinaTotal || 0}
-          onChange={(v) => store.updateDayField(date, ['propinaTotal'], v)}
-          style={{ width: 110, padding: '3px 7px', fontSize: 11.5 }}
-        />
       </div>
     </div>
   );

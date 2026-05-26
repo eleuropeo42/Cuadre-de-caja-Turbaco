@@ -162,8 +162,7 @@ function parseLoggroText(text) {
     if (/^Resumen\s*$/i.test(line))              { section = null; continue; }
 
     if (section === 'ventas') {
-      // Lines: "Efectivo 2 $ 231.000", "Datafono 3 $ 292.500", "Propinas $ 57.000"
-      // (Some PDFs label the card-payment row "Tarjeta" instead — accept either.)
+      // Lines: "Efectivo 2 $ 231.000", "Tarjeta 3 $ 292.500", "Propinas $ 57.000"
       // Take the LAST money token (Sistema column — propina included)
       const tokens = [...line.matchAll(/\$?\s*-?\s*\$?\s*([\d.,]{1,15})/g)]
         .map(m => m[1])
@@ -172,10 +171,10 @@ function parseLoggroText(text) {
       const value = parseMoneyStr(tokens[tokens.length - 1]);
       const nameMatch = line.match(/^([A-Za-zÁÉÍÓÚÑáéíóúñ.()]+(?:\s+[A-Za-zÁÉÍÓÚÑáéíóúñ.()]+)*)/);
       const name = nameMatch ? nameMatch[1].toLowerCase() : '';
-      if      (/^efectivo/.test(name))            result.ventas.efectivo = value;
-      else if (/^(datafono|datáfono|tarjeta)/.test(name)) result.ventas.tarjeta  = value;
-      else if (/transferenc/.test(name))          result.ventas.transferencia = value;
-      else if (/^propina/.test(name))             result.propinaTotal = value;
+      if      (/^efectivo/.test(name))     result.ventas.efectivo = value;
+      else if (/^tarjeta|dat[áa]fono/.test(name))      result.ventas.tarjeta  = value;
+      else if (/transferenc/.test(name))   result.ventas.transferencia = value;
+      else if (/^propina/.test(name))      result.propinaTotal = value;
     } else if (section === 'gastos') {
       // Line shape: NAME $V (just one money value)
       const m = line.match(/^([A-Za-zÁÉÍÓÚÑáéíóúñ.()\s/&-]+?)\s+\$?\s*-?\$?\s*([\d.,]+)\s*$/);
@@ -186,6 +185,15 @@ function parseLoggroText(text) {
         if (/^total\b/.test(name)) continue;
         if (/^gastos?$/.test(name)) continue;
         if (/^tipo\b/.test(name))   continue;
+
+        // Turbaco: tips appear as an expense too. Don't double-count into "otros"
+        // — we already captured the propina from the Ventas section; this is the
+        // same money paid out daily (cristalería).
+        if (/propina|cristal/.test(name)) {
+          // If Ventas section didn't capture propina, take it from here.
+          if (!result.propinaTotal) result.propinaTotal = value;
+          continue;
+        }
 
         if      (/n[óo]mina/.test(name))                result.gastos.nomina      += value;
         else if (/insumo|proveedor/.test(name))         result.gastos.proveedores += value;
